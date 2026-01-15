@@ -106,6 +106,7 @@ public:
 		interrupts_in_use = attach_interrupt(pin1, &encoder);
 		interrupts_in_use += attach_interrupt(pin2, &encoder);
 #endif
+		RESET_RAMPZ();
 		//update_finishup();  // to force linker to include the code (does not work)
 	}
 
@@ -219,6 +220,13 @@ public:
 	static void update(Encoder_internal_state_t *arg) {
 #endif
 #if defined(__AVR__)
+		static const int8_t inctable[16]= //0 - no movement, bit 0 is direction, bits 2 and 1 are the absolute value 
+		{ 
+			0, 2, 3, 4, //  0, 1, -1, +2
+			3, 0, 5, 2, // -1, 0, -2, +1
+			2, 5, 0, 3, // +1, -2, 0, -1
+			4, 3, 2, 0  // +2, -1, +1, 0
+		};
 		// The compiler believes this is just 1 line of code, so
 		// it will inline this function into each interrupt
 		// handler.  That's a tiny bit faster, but grows the code.
@@ -243,65 +251,47 @@ public:
 		"L%=1:"	"and	r25, r31"		"\n\t"
 			"breq	L%=2"			"\n\t"	// if (pin2)
 			"ori	r22, 8"			"\n\t"	//	state |= 8
-		"L%=2:" "ldi	r30, lo8(pm(L%=table))"	"\n\t"
-			"ldi	r31, hi8(pm(L%=table))"	"\n\t"
+		"L%=2:"
+			"mov r31, r22"		"\n\t"	// r31 and r22 = state
+			"lsr	r31"			"\n\t"
+			"lsr	r31"			"\n\t"	// r31 = state >> 2
+			"st	X+, r31"		"\n\t"  // store new state
+
+			"ldi		r30, lo8(%1)"	"\n\t"
+			"ldi		r31, hi8(%1)"	"\n\t"
 			"add	r30, r22"		"\n\t"
-			"adc	r31, __zero_reg__"	"\n\t"
-			"asr	r22"			"\n\t"
-			"asr	r22"			"\n\t"
-			"st	X+, r22"		"\n\t"  // store new state
-			"ld	r22, X+"		"\n\t"
+			"adc	r31, __zero_reg__"	"\n\t"			
+			"ld 	r31, Z"			"\n\t"	// r31 = inctable[state]
+			"clc"				"\n\t"
+			"ror	r31"			"\n\t"	// direction bit to carry
+
+			"ld	r22, X+"		"\n\t" // load position to r22:r23:r24:r25
 			"ld	r23, X+"		"\n\t"
 			"ld	r24, X+"		"\n\t"
 			"ld	r25, X+"		"\n\t"
-			"ijmp"				"\n\t"	// jumps to update_finishup()
-			// TODO move this table to another static function,
-			// so it doesn't get needlessly duplicated.  Easier
-			// said than done, due to linker issues and inlining
-		"L%=table:"				"\n\t"
-			"rjmp	L%=end"			"\n\t"	// 0
-			"rjmp	L%=plus1"		"\n\t"	// 1
-			"rjmp	L%=minus1"		"\n\t"	// 2
-			"rjmp	L%=plus2"		"\n\t"	// 3
-			"rjmp	L%=minus1"		"\n\t"	// 4
-			"rjmp	L%=end"			"\n\t"	// 5
-			"rjmp	L%=minus2"		"\n\t"	// 6
-			"rjmp	L%=plus1"		"\n\t"	// 7
-			"rjmp	L%=plus1"		"\n\t"	// 8
-			"rjmp	L%=minus2"		"\n\t"	// 9
-			"rjmp	L%=end"			"\n\t"	// 10
-			"rjmp	L%=minus1"		"\n\t"	// 11
-			"rjmp	L%=plus2"		"\n\t"	// 12
-			"rjmp	L%=minus1"		"\n\t"	// 13
-			"rjmp	L%=plus1"		"\n\t"	// 14
-			"rjmp	L%=end"			"\n\t"	// 15
-		"L%=minus2:"				"\n\t"
-			"subi	r22, 2"			"\n\t"
-			"sbci	r23, 0"			"\n\t"
-			"sbci	r24, 0"			"\n\t"
-			"sbci	r25, 0"			"\n\t"
+
+			"brcs	L%=minus"		"\n\t"
+// position plus r31
+			"add	r22, r31"		"\n\t"	"\n\t"
+			"adc	r23, __zero_reg__"	"\n\t"
+			"adc	r24, __zero_reg__"	"\n\t"
+			"adc	r25, __zero_reg__"	"\n\t"
 			"rjmp	L%=store"		"\n\t"
-		"L%=minus1:"				"\n\t"
-			"subi	r22, 1"			"\n\t"
-			"sbci	r23, 0"			"\n\t"
-			"sbci	r24, 0"			"\n\t"
-			"sbci	r25, 0"			"\n\t"
-			"rjmp	L%=store"		"\n\t"
-		"L%=plus2:"				"\n\t"
-			"subi	r22, 254"		"\n\t"
-			"rjmp	L%=z"			"\n\t"
-		"L%=plus1:"				"\n\t"
-			"subi	r22, 255"		"\n\t"
-		"L%=z:"	"sbci	r23, 255"		"\n\t"
-			"sbci	r24, 255"		"\n\t"
-			"sbci	r25, 255"		"\n\t"
+		"L%=minus:"				"\n\t"
+// position minus r31
+			"sub 	r22, r31"		"\n\t"
+			"sbc	r23, __zero_reg__"	"\n\t"
+			"sbc	r24, __zero_reg__"	"\n\t"
+			"sbc	r25, __zero_reg__"	"\n\t"
 		"L%=store:"				"\n\t"
 			"st	-X, r25"		"\n\t"
 			"st	-X, r24"		"\n\t"
 			"st	-X, r23"		"\n\t"
 			"st	-X, r22"		"\n\t"
 		"L%=end:"				"\n"
-		: : "x" (arg) : "r22", "r23", "r24", "r25", "r30", "r31");
+		: 
+		: "x" (arg), "i"(inctable)
+		: "r22", "r23", "r24", "r25", "r30", "r31");
 #else
 		uint8_t p1val = DIRECT_PIN_READ(arg->pin1_register, arg->pin1_bitmask);
 		uint8_t p2val = DIRECT_PIN_READ(arg->pin2_register, arg->pin2_bitmask);

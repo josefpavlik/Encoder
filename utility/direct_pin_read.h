@@ -1,8 +1,28 @@
 #ifndef direct_pin_read_h_
 #define direct_pin_read_h_
 
-#if defined(__AVR__)
+#if defined(RAMPZ)
+#define RESET_RAMPZ()  do {RAMPZ = 0;} while (0)
+#else
+#define RESET_RAMPZ()  do {} while (0)
+#endif
 
+
+#if defined(__AVR__) && defined(RAMPZ)
+
+#define portInputRegister_far(P) ( (volatile uint8_t *)( pgm_read_word_far( pgm_get_far_address(port_to_input_PGM) + 2*(P))) )
+#define digitalPinToBitMask_far(P) ( pgm_read_byte_far( pgm_get_far_address(digital_pin_to_bit_mask_PGM) + (P) ) )
+#define digitalPinToPort_far(P) ( pgm_read_byte_far( pgm_get_far_address(digital_pin_to_port_PGM) + (P) ) )
+
+
+#define IO_REG_TYPE			uint8_t
+#define PIN_TO_BASEREG(pin)             (portInputRegister_far(digitalPinToPort_far(pin)))
+#define PIN_TO_BITMASK(pin)             (digitalPinToBitMask_far(pin))
+#define DIRECT_PIN_READ(base, mask)     (((*(base)) & (mask)) ? 1 : 0)
+
+#elif defined(__AVR__)
+
+#define IO_REG_TYPE			uint8_t
 #define PIN_TO_BASEREG(pin)             (portInputRegister(digitalPinToPort(pin)))
 #define PIN_TO_BITMASK(pin)             (digitalPinToBitMask(pin))
 #define DIRECT_PIN_READ(base, mask)     (((*(base)) & (mask)) ? 1 : 0)
