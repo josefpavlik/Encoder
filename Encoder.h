@@ -264,6 +264,7 @@ public:
 			"ld 	r31, Z"			"\n\t"	// r31 = inctable[state]
 			"clc"				"\n\t"
 			"ror	r31"			"\n\t"	// direction bit to carry
+			"breq	L%=end"		"\n\t"  	// speed up on no change
 
 			"ld	r22, X+"		"\n\t" // load position to r22:r23:r24:r25
 			"ld	r23, X+"		"\n\t"
